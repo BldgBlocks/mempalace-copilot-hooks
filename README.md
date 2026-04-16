@@ -63,6 +63,3 @@ Full details are in `docs/install-mempalace.md`.
 - Each chat session gets one rolling `chat-transcript` drawer.
 - Drawer IDs are human-readable and include a short stable hash suffix to avoid collisions.
 
-## Repo use
-
-This folder is meant to be a clean place to track your local integration choices separately from Vaultwarden or any other working repo.
