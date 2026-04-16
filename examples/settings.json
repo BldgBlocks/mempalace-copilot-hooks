@@ -1,9 +1,5 @@
 {
   "chat.hookFilesLocations": {
-    ".github/hooks": true,
-    ".claude/settings.local.json": true,
-    ".claude/settings.json": true,
-    "~/.claude/settings.json": true,
     "~/.config/Code/User/copilot-hooks": true
   }
 }

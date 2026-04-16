@@ -7,20 +7,20 @@ It does not vendor the MemPalace Python package itself.
 
 Current tested setup in this machine:
 
-- installed package: `mempalace-copilot==0.1.0a0`
-- homepage: https://github.com/crowdedLeopard/mempalace
-- upstream: https://github.com/milla-jovovich/mempalace
+- installed package: `mempalace==3.3.0`
+- repo: https://github.com/MemPalace/mempalace
+- docs: https://mempalaceofficial.com/
 
 Practical guidance:
 
-- Use the `crowdedLeopard/mempalace` fork if you want the Copilot-focused CLI and MCP setup commands that are already wired for VS Code.
-- Use upstream only if you have checked that it still exposes the same Python import path `mempalace.config.MempalaceConfig`, the same MCP module `mempalace.mcp_server`, and a compatible Chroma collection layout.
-- The hook script in this repo is written against the currently installed fork and is not claimed to be upstream-compatible without verification.
+- Use the official upstream package from PyPI.
+- The hook script in this repo has been updated and validated against the upstream CLI shape and MCP server module.
+- Official sources are the GitHub repo, the PyPI package, and `mempalaceofficial.com`.
 
 ## Recommended install
 
 1. Create a dedicated virtual environment.
-2. Install the Copilot fork into it.
+2. Install the official package into it.
 3. Point VS Code MCP and hooks at that environment.
 
 Example:
@@ -29,19 +29,27 @@ Example:
 python3 -m venv "$HOME/.venvs/mempalace-copilot"
 source "$HOME/.venvs/mempalace-copilot/bin/activate"
 pip install --upgrade pip
-pip install git+https://github.com/crowdedLeopard/mempalace.git
+pip install --upgrade mempalace
 ```
-
-If the fork later ships a normal package name on PyPI and you trust that release, you can install from PyPI instead.
 
 ## Verify the package
 
 ```bash
-"$HOME/.venvs/mempalace-copilot/bin/python" -m mempalace.mcp_server
+"$HOME/.venvs/mempalace-copilot/bin/mempalace" status
 ```
 
-That should start the MCP server process.
-Stop it with Ctrl+C after confirming it launches.
+If you use a custom palace path, put the global flag before the subcommand:
+
+```bash
+"$HOME/.venvs/mempalace-copilot/bin/mempalace" --palace /path/to/palace status
+```
+
+To print the exact MCP setup command for your environment:
+
+```bash
+"$HOME/.venvs/mempalace-copilot/bin/mempalace" mcp
+"$HOME/.venvs/mempalace-copilot/bin/mempalace" --palace /path/to/palace mcp
+```
 
 ## VS Code wiring
 
@@ -55,6 +63,11 @@ If your VS Code MCP config does not expand `$HOME` in the `command` field, repla
 
 ## Notes
 
-- The hook script stores full transcript JSONL into the `mempalace_drawers` collection.
-- Transcript entries are updated in place per session, not appended forever as separate drawer IDs.
-- Human-readable transcript IDs are derived from session date plus first prompt, with a short stable hash suffix for uniqueness.
+- The hook script exports a normalized `.txt` transcript into the active workspace under `.mempalace-cache/copilot-hooks/<wing>/...` when possible, and that per-workspace cache is the intended persistent location. It falls back to `$HOME/.config/Code/User/copilot-hooks/exports/<wing>/...` only if no workspace path is available, then invokes `mempalace mine --mode convos --extract general` for conversation categorization.
+- The `.txt` normalization is deliberate: the VS Code hook transcript arrives as JSONL event records, and upstream MemPalace does not reliably auto-parse this exact schema as a conversation transcript. Converting it to plain `>`-marked turns gives convo mining a stable, schema-independent input.
+- A stable cache path is safer than tmpfs or a pure in-memory handoff because MemPalace refreshes prior drawers by `source_file`. If the path changes on every hook run, deduplication becomes replacement-resistant and old drawers accumulate.
+- The hook emits warnings to stderr when cleanup or mining fails so export-only failures are visible during debugging.
+- Wing names include a short hash of the resolved workspace path to avoid collisions when different projects share the same folder basename.
+- The export path is stable per session so the hook can clear previously mined drawers for that source before re-mining.
+- The hook script is deterministic and does not call Copilot or a sub-agent from Python.
+- If an upstream ChromaDB change ever makes an existing palace unreadable, use `mempalace --palace /path/to/palace migrate` after making sure the palace path is mounted and reachable.

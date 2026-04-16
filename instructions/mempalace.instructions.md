@@ -46,7 +46,7 @@ The one explicit exception is the bootstrap step at the start of the session whe
 
 ## Save Strategy
 
-Hooks already preserve the raw chat transcript. Use MemPalace saves for durable structured recall, not as a duplicate dump of everything.
+Hook-exported transcripts are mined by MemPalace outside the agent. Use MemPalace saves for durable structured recall, not as a duplicate dump of everything.
 
 Good candidates for drawer filing:
 
@@ -56,6 +56,17 @@ Good candidates for drawer filing:
 - facts whose old values may later need invalidation
 
 Do not skip a useful durable save merely because duplication is possible, but also do not create redundant manual saves for context that the hook-captured transcript already preserves unless separate retrieval value is clear.
+
+## Transcript Mining Rule
+
+Hook-captured chat transcripts are exported and mined outside the agent.
+The hook exports the verbatim session transcript as plain text, then MemPalace mines that export for conversation categorization.
+
+Do not create a parallel manual chat-summary workflow for normal transcript ingest.
+For hook-captured chat history, prefer retrieving from:
+
+- the exported and mined conversation transcript when exact history matters
+- the mined conversation rooms when categorized recall is enough
 
 ## Diary Rule
 

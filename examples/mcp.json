@@ -5,7 +5,9 @@
       "command": "$HOME/.venvs/mempalace-copilot/bin/python",
       "args": [
         "-m",
-        "mempalace.mcp_server"
+        "mempalace.mcp_server",
+        "--palace",
+        "/path/to/palace"
       ]
     }
   },
