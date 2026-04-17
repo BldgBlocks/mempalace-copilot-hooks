@@ -65,6 +65,8 @@ Then:
 9. Copy `prompts/mpingest.prompt.md` into the active user prompts directory if you want the `/mpingest` slash command available in chat.
 10. Reload VS Code.
 
+The `utilities/` folder does not get copied into the VS Code prompts or hooks folders. Leave it in your cloned repo and run those scripts from the clone path when you need them. For example, if you cloned this repo into `~/src/mempalace-copilot-hooks`, the importer stays at `~/src/mempalace-copilot-hooks/utilities/mpimport.py`.
+
 For manual hook replay or imported transcript ingest, run the deployed hook with the known MemPalace venv explicitly:
 
 ```bash

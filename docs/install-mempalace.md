@@ -60,6 +60,8 @@ To print the exact MCP setup command for your environment:
 5. Copy `prompts/mpingest.prompt.md` into the same user prompts location if you want the `/mpingest` slash command available.
 6. Reload VS Code.
 
+Keep `utilities/` in the cloned repo. It is not part of the VS Code user prompts path or the deployed hook folder. Those scripts are meant to be run from wherever you cloned this repository, for example `~/src/mempalace-copilot-hooks/utilities/mpimport.py`.
+
 For example, a desktop profile may use `~/.config/Code/User/prompts/` while a serve-web profile may use `~/.vscode-server/data/User/prompts/`.
 Keeping the files in this repo under `instructions/` and `prompts/` preserves the source, but those workspace paths alone do not guarantee automatic prompt or instruction injection.
 
