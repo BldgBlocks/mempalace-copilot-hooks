@@ -9,6 +9,8 @@ agent: agent
 
 Use this prompt when the user provides exported chat transcript files or folders from another platform and wants them ingested through the same hook-driven MemPalace path used for normal Copilot chat capture.
 
+If the supplied material is Markdown chat exports instead of hook-readable JSONL or already-normalized `.txt` transcripts, prefer this repo's `utilities/mpimport.py` helper when it is available in the workspace. That helper converts each Markdown file into cached `transcript.txt` files and still ingests them one at a time through the deployed hook.
+
 ## Goal
 
 Process the supplied transcript files one at a time through the deployed hook script so imported chats receive the same handling as live Copilot chats:
@@ -38,11 +40,13 @@ Process the supplied transcript files one at a time through the deployed hook sc
    - how many files were attempted
    - how many succeeded or failed
    - any hook warnings or mine failures
+11. If the input is Markdown exports and this repo utility is available, prefer running `python utilities/mpimport.py --workspace <workspace-root> <paths...>` instead of hand-rolling the conversion loop in the agent.
 
 ## File Selection Guidance
 
 - Accept JSONL transcript files if they follow the hook-readable event format.
 - Accept already-normalized `.txt` transcripts if the user wants them re-filed through the same fallback-plus-mine path.
+- Accept Markdown chat exports when they match the converter format handled by `utilities/mpimport.py`.
 - Skip obvious non-transcript files and say what was skipped.
 
 ## Safety and Consistency Rules
@@ -54,7 +58,10 @@ Process the supplied transcript files one at a time through the deployed hook sc
 
 ## Suggested Execution Shape
 
-If the user gives a folder, first discover candidate files, then iterate one file at a time by piping a JSON payload into the deployed hook script through `/home/admin/.venvs/mempalace-copilot/bin/python`.
+If the user gives a folder, first discover candidate files.
+
+- For `.jsonl` or `.txt` transcript inputs, iterate one file at a time by piping a JSON payload into the deployed hook script through `/home/admin/.venvs/mempalace-copilot/bin/python`.
+- For Markdown exports, prefer `utilities/mpimport.py` when it is available, because it performs Markdown-to-`transcript.txt` conversion and then does the same sequential hook ingest path.
 
 ## Output Style
 

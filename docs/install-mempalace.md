@@ -71,6 +71,14 @@ For manual hook replay, or for prompt-driven imported transcript ingest such as 
 
 Do not rely on `python3`, `mempalace`, `uv`, or other ambient shell commands being available on `PATH` in the terminal where you run the import.
 
+If you are importing Markdown chat exports in the common heading-based format, use the repo helper so conversion and sequential hook replay stay consistent with the prompt and hook contract:
+
+```bash
+python utilities/mpimport.py --workspace /path/to/workspace /path/to/export-or-folder
+```
+
+That helper writes converted Markdown transcripts into `.mempalace-cache/imports/`, runs the same preflight check against the deployed MemPalace environment, and then feeds each resulting `transcript.txt` into the deployed hook one file at a time. It also accepts already-normalized `.txt` and hook-readable `.jsonl` transcript files.
+
 If your VS Code MCP config does not expand `$HOME` in the `command` field, replace it with the full path for your machine.
 
 ## Notes

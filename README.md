@@ -20,6 +20,7 @@ The hook reads the Copilot transcript file, writes a plain-text export, files on
 
 - `hooks/export-events.json`: active hook mapping for `UserPromptSubmit`, `PreCompact`, and `Stop`
 - `hooks/export_chat_hook.py`: transcript export script plus MemPalace mining step
+- `utilities/mpimport.py`: helper for importing Markdown, `.txt`, or `.jsonl` chat exports through the deployed hook path
 - `instructions/mempalace.instructions.md`: simplified instruction file that assumes hooks own raw capture
 - `examples/settings.json`: minimal VS Code user settings snippet for hook discovery
 - `examples/mcp.json`: minimal VS Code MCP server snippet
@@ -72,6 +73,14 @@ For manual hook replay or imported transcript ingest, run the deployed hook with
 
 Do not assume the current shell `PATH` contains a working `mempalace` CLI or importable Python package.
 
+For imported chat exports that are already `.txt` or hook-readable `.jsonl`, you can still drive the deployed hook directly one file at a time. For Markdown exports in the common heading-based format, use the repo utility so conversion and ingest stay aligned with the documented hook path:
+
+```bash
+python utilities/mpimport.py --workspace /path/to/workspace /path/to/export-or-folder
+```
+
+That command preserves the same preflight check, stable `cwd`, sequential hook execution, and summary output described in the `/mpingest` prompt while writing converted Markdown transcripts into `.mempalace-cache/imports/`.
+
 The `serve-web/` folder documents a working browser-served VS Code path that was validated against the MemPalace HTTP bridge. It is optional, but it is no longer just speculative preservation material.
 
 If you use a custom palace path, generate the exact MCP command with `mempalace --palace /path/to/palace mcp` and mirror that in your MCP config.
@@ -97,4 +106,5 @@ Full details are in `docs/install-mempalace.md`.
 - The hook still runs `mempalace mine --mode convos --extract exchange` for the normal upstream conversation-ingest path on `transcript.txt`.
 - The exported transcript path is stable per session so re-mining refreshes the same source instead of creating unrelated duplicates.
 - The mining step is handled by MemPalace itself rather than by an agent-authored prompt workflow.
+- The repo utility `utilities/mpimport.py` is a convenience wrapper around that same deployed hook path. It can convert Markdown exports into cached `transcript.txt` files, or pass `.txt` and `.jsonl` sources straight through, without bypassing the hook.
 

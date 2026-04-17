@@ -1,0 +1,1 @@
+"""Utility scripts for the MemPalace Copilot hook repo."""
