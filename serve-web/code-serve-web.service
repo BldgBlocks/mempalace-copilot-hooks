@@ -1,0 +1,15 @@
+[Unit]
+Description=VS Code Serve-Web
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/code-tunnel serve-web --host 0.0.0.0 --port 3232 --accept-server-license-terms --without-connection-token
+Restart=always
+RestartSec=5
+WorkingDirectory=%h
+Environment=HOME=%h
+Environment=NODE_OPTIONS=--require=%h/.config/Code/User/serve-web/navigator-shim.cjs
+
+[Install]
+WantedBy=default.target

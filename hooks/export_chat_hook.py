@@ -4,15 +4,26 @@ import hashlib
 import json
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
-import chromadb
 from mempalace.config import MempalaceConfig
+from mempalace.palace import (
+    NORMALIZE_VERSION,
+    build_closet_lines,
+    get_closets_collection as palace_get_closets_collection,
+    get_collection as palace_get_collection,
+    purge_file_closets,
+    upsert_closet_lines,
+)
 
 ADDED_BY = "GitHub Copilot Hook"
 MINE_EVENTS = {"UserPromptSubmit", "PreCompact", "Stop"}
 EXPORTS_DIRNAME = "exports"
-MINE_EXTRACT_MODE = "general"
+FULL_TRANSCRIPT_ROOM = "chat_transcript_full"
+FULL_TRANSCRIPT_EXTRACT_MODE = "verbatim_full"
+MINE_EXTRACT_MODE = "exchange"
+FULL_TRANSCRIPT_FILENAME = "transcript.full.raw"
 KNOWN_RECORD_TYPES = {"session.start", "user.message", "assistant.message"}
 
 
@@ -49,10 +60,10 @@ def derive_cache_root(payload: dict, wing: str) -> Path:
     # Why not raw in-memory / tmpfs by default:
     # - This hook is a one-shot process; there is no shared in-memory state
     #   across invocations.
-    # - MemPalace convo mining deduplicates by source_file, so the cache path
-    #   must be stable across repeated hook runs for the same session.
+    # - The raw transcript drawer and closets are keyed by source_file, so the
+    #   cache path must be stable across repeated hook runs for the same session.
     # - A workspace-local .mempalace-cache keeps data out of unrelated user
-    #   config folders while still giving the miner a durable path to replace.
+    #   config folders while still giving the palace a durable replacement key.
     cwd_value = get_field(payload, "cwd", default="")
     if cwd_value:
         cwd = Path(cwd_value).expanduser()
@@ -61,20 +72,22 @@ def derive_cache_root(payload: dict, wing: str) -> Path:
     return Path(__file__).resolve().parent / EXPORTS_DIRNAME / wing
 
 
-def get_collection():
-    palace_path = Path(MempalaceConfig().palace_path).expanduser()
+def get_drawers_collection(palace_path: Path):
     palace_path.mkdir(parents=True, exist_ok=True)
     try:
-        client = chromadb.PersistentClient(path=str(palace_path))
-        return client.get_collection("mempalace_drawers")
+        return palace_get_collection(str(palace_path), collection_name="mempalace_drawers", create=True)
     except Exception as exc:
         warn(f"could not open mempalace_drawers collection at {palace_path}: {exc}")
-        try:
-            client = chromadb.PersistentClient(path=str(palace_path))
-            return client.create_collection("mempalace_drawers")
-        except Exception as create_exc:
-            warn(f"could not create mempalace_drawers collection at {palace_path}: {create_exc}")
-            return None
+        return None
+
+
+def get_closets_collection(palace_path: Path):
+    palace_path.mkdir(parents=True, exist_ok=True)
+    try:
+        return palace_get_closets_collection(str(palace_path), create=True)
+    except Exception as exc:
+        warn(f"could not open mempalace_closets collection at {palace_path}: {exc}")
+        return None
 
 
 def read_transcript_records(transcript: str) -> list[dict]:
@@ -141,18 +154,6 @@ def derive_transcript_label(payload: dict, records: list[dict], fallback_timesta
 
 
 def render_transcript_export(records: list[dict]) -> str:
-    # Normalize the VS Code transcript into MemPalace's plain conversation
-    # format before mining.
-    #
-    # Why render to transcript.txt instead of mining the JSONL directly:
-    # - The hook payload transcript uses VS Code event records like
-    #   session.start / user.message / assistant.message.
-    # - Upstream mempalace normalize() reliably auto-parses only the chat JSON
-    #   schemas it knows about. This VS Code hook shape is not one of those
-    #   stable, supported schemas, so mining the raw JSONL would treat it as
-    #   opaque text and index JSON syntax instead of the conversation.
-    # - Rendering to >-marked plain text gives convo mining a stable format
-    #   even if VS Code changes JSON field names later.
     lines: list[str] = []
     last_role = None
     rendered_turns = 0
@@ -221,21 +222,119 @@ def export_transcript_file(
         return export_path
 
 
-def cleanup_mined_drawers(collection, source_file: str) -> None:
-    if collection is None:
-        return
+def derive_full_transcript_path(export_path: Path) -> Path:
+    full_path = export_path.with_name(FULL_TRANSCRIPT_FILENAME)
     try:
-        existing = collection.get(where={"source_file": source_file}, include=[])
-    except Exception as exc:
-        warn(f"could not query existing drawers for {source_file}: {exc}")
-        return
+        return full_path.resolve()
+    except OSError:
+        return full_path
 
-    existing_ids = [drawer_id for drawer_id in existing.get("ids", []) if drawer_id]
-    if existing_ids:
+
+def derive_session_title(export_path: Path) -> str:
+    session_dir = export_path.parent.name or export_path.stem
+    parts = session_dir.split("_")
+    if len(parts) >= 3:
+        session_hash = parts[-1]
+        session_slug = " ".join(parts[1:-1]).strip() or export_path.stem
+        return f"{parts[0]} | {session_slug} | {session_hash}"
+    return session_dir.replace("_", " ").strip() or export_path.stem
+
+
+def build_explicit_transcript_document(session_title: str, export_path: Path, transcript_text: str) -> str:
+    header_lines = [
+        "[Copilot Transcript Full Record]",
+        f"Session Title: {session_title}",
+        f"Session Folder: {export_path.parent.name}",
+        f"Canonical Transcript Source: {export_path.name}",
+        "Record Class: explicit fallback | migration data | future-proof data | long-form | safer verbatim | rebuildable",
+        "Storage Contract: one singular explicit drawer preserved separately from any MemPalace mine output",
+        "",
+        "--- BEGIN VERBATIM TRANSCRIPT ---",
+    ]
+    footer_lines = ["--- END VERBATIM TRANSCRIPT ---"]
+    return "\n".join(header_lines + [transcript_text] + footer_lines).strip()
+
+
+def transcript_drawer_id(wing: str, source_file: str) -> str:
+    source_hash = hashlib.sha256(source_file.encode(), usedforsecurity=False).hexdigest()[:24]
+    return f"drawer_{wing}_{FULL_TRANSCRIPT_ROOM}_{source_hash}"
+
+
+def transcript_closet_id_base(wing: str, source_file: str) -> str:
+    source_hash = hashlib.sha256(source_file.encode(), usedforsecurity=False).hexdigest()[:24]
+    return f"closet_{wing}_{FULL_TRANSCRIPT_ROOM}_{source_hash}"
+
+
+def cleanup_transcript_artifacts(drawers_col, closets_col, source_file: str) -> None:
+    if drawers_col is not None:
         try:
-            collection.delete(ids=existing_ids)
+            drawers_col.delete(where={"source_file": source_file})
         except Exception as exc:
             warn(f"could not delete existing drawers for {source_file}: {exc}")
+    if closets_col is not None:
+        try:
+            purge_file_closets(closets_col, source_file)
+        except Exception as exc:
+            warn(f"could not delete existing closets for {source_file}: {exc}")
+
+
+def file_transcript_drawer(drawers_col, wing: str, source_file: str, session_title: str, transcript_document: str) -> str | None:
+    if drawers_col is None:
+        return None
+
+    drawer_id = transcript_drawer_id(wing, source_file)
+    try:
+        drawers_col.upsert(
+            ids=[drawer_id],
+            documents=[transcript_document],
+            metadatas=[
+                {
+                    "wing": wing,
+                    "room": FULL_TRANSCRIPT_ROOM,
+                    "hall": "general",
+                    "source_file": source_file,
+                    "chunk_index": 0,
+                    "added_by": ADDED_BY,
+                    "filed_at": datetime.now().isoformat(),
+                    "title": session_title,
+                    "record_class": "explicit_fallback_migration_futureproof_longform_rebuildable",
+                    "ingest_mode": "hook_transcript_full",
+                    "extract_mode": FULL_TRANSCRIPT_EXTRACT_MODE,
+                    "normalize_version": NORMALIZE_VERSION,
+                }
+            ],
+        )
+        return drawer_id
+    except Exception as exc:
+        warn(f"could not file transcript drawer for {source_file}: {exc}")
+        return None
+
+
+def file_transcript_closets(closets_col, wing: str, source_file: str, drawer_id: str, transcript_text: str) -> None:
+    if closets_col is None:
+        return
+
+    try:
+        lines = build_closet_lines(source_file, [drawer_id], transcript_text, wing, FULL_TRANSCRIPT_ROOM)
+        upsert_closet_lines(
+            closets_col,
+            transcript_closet_id_base(wing, source_file),
+            lines,
+            {
+                "wing": wing,
+                "room": FULL_TRANSCRIPT_ROOM,
+                "hall": "general",
+                "source_file": source_file,
+                "added_by": ADDED_BY,
+                "filed_at": datetime.now().isoformat(),
+                "record_class": "explicit_fallback_migration_futureproof_longform_rebuildable",
+                "ingest_mode": "hook_transcript_full",
+                "extract_mode": FULL_TRANSCRIPT_EXTRACT_MODE,
+                "normalize_version": NORMALIZE_VERSION,
+            },
+        )
+    except Exception as exc:
+        warn(f"could not file transcript closets for {source_file}: {exc}")
 
 
 def run_mine_command(export_path: Path, wing: str, palace_path: Path) -> None:
@@ -295,27 +394,48 @@ def maybe_store_transcript(payload: dict) -> None:
 
     wing = derive_wing(payload)
     timestamp = get_field(payload, "timestamp", default="")
-    records = read_transcript_records(transcript)
+    if source.suffix.lower() == ".txt":
+        records = []
+    else:
+        records = read_transcript_records(transcript)
     session_date, label_slug, session_hash = derive_transcript_label(payload, records, timestamp, source)
 
-    transcript_text = render_transcript_export(records)
-    if not transcript_text:
-        warn(f"no user/assistant turns rendered from transcript {source}")
+    if records:
+        transcript_text = render_transcript_export(records)
+        if not transcript_text:
+            warn(f"no user/assistant turns rendered from transcript {source}")
+            return
+        export_path = export_transcript_file(
+            payload=payload,
+            wing=wing,
+            session_date=session_date,
+            label_slug=label_slug,
+            session_hash=session_hash,
+            transcript_text=transcript_text,
+        )
+    elif source.suffix.lower() == ".txt":
+        transcript_text = normalize_text_block(transcript)
+        if not transcript_text:
+            return
+        try:
+            export_path = source.resolve()
+        except OSError:
+            export_path = source
+    else:
+        warn(f"no parseable transcript records found in {source}")
         return
 
-    export_path = export_transcript_file(
-        payload=payload,
-        wing=wing,
-        session_date=session_date,
-        label_slug=label_slug,
-        session_hash=session_hash,
-        transcript_text=transcript_text,
-    )
-    # Cleanup happens before mine so a repeated hook run for the same session
-    # replaces the previous drawers instead of stacking duplicates.
     palace_path = Path(MempalaceConfig().palace_path).expanduser()
-    collection = get_collection()
-    cleanup_mined_drawers(collection, str(export_path))
+    drawers_col = get_drawers_collection(palace_path)
+    closets_col = get_closets_collection(palace_path)
+    full_export_path = derive_full_transcript_path(export_path)
+    session_title = derive_session_title(export_path)
+    transcript_document = build_explicit_transcript_document(session_title, export_path, transcript_text)
+    full_export_path.write_text(transcript_document + "\n", encoding="utf-8")
+    cleanup_transcript_artifacts(drawers_col, closets_col, str(full_export_path))
+    drawer_id = file_transcript_drawer(drawers_col, wing, str(full_export_path), session_title, transcript_document)
+    if drawer_id:
+        file_transcript_closets(closets_col, wing, str(full_export_path), drawer_id, transcript_text)
     run_mine_command(export_path, wing, palace_path)
 
 

@@ -56,18 +56,27 @@ To print the exact MCP setup command for your environment:
 1. Put the hook files in `$HOME/.config/Code/User/copilot-hooks/`.
 2. Add the hook location snippet from `examples/settings.json` to your VS Code user settings.
 3. Add the MCP server snippet from `examples/mcp.json` to your VS Code user `mcp.json`.
-4. Put the instruction file where you want Copilot to load it from.
-5. Reload VS Code.
+4. Copy `instructions/mempalace.instructions.md` into the user prompts location for the profile you are using.
+5. Copy `prompts/mpingest.prompt.md` into the same user prompts location if you want the `/mpingest` slash command available.
+6. Reload VS Code.
+
+For example, a desktop profile may use `~/.config/Code/User/prompts/` while a serve-web profile may use `~/.vscode-server/data/User/prompts/`.
+Keeping the files in this repo under `instructions/` and `prompts/` preserves the source, but those workspace paths alone do not guarantee automatic prompt or instruction injection.
 
 If your VS Code MCP config does not expand `$HOME` in the `command` field, replace it with the full path for your machine.
 
 ## Notes
 
-- The hook script exports a normalized `.txt` transcript into the active workspace under `.mempalace-cache/copilot-hooks/<wing>/...` when possible, and that per-workspace cache is the intended persistent location. It falls back to `$HOME/.config/Code/User/copilot-hooks/exports/<wing>/...` only if no workspace path is available, then invokes `mempalace mine --mode convos --extract general` for conversation categorization.
+- The hook script exports a normalized `.txt` transcript into the active workspace under `.mempalace-cache/copilot-hooks/<wing>/...` when possible, and that per-workspace cache is the intended persistent location.
+- In the same session folder it also writes `transcript.full.raw`, which is filed as one explicit titled `chat_transcript_full` drawer plus deterministic closets. This explicit record is fallback data, migration data, future-proof data, long-form data, safer verbatim data, and rebuildable data.
+- After filing the explicit long-form record, the hook runs `mempalace mine --mode convos --extract exchange` against the session folder so upstream MemPalace still ingests `transcript.txt` using its normal conversation logic.
+- `mempalace mine --mode convos --extract general` is meant for auto-classifying conversation exports into decisions, milestones, problems, and similar memory types. It is not the right default for hook-captured Copilot transcripts when the primary requirement is raw verbatim recall.
+- `mempalace mine --mode convos --extract exchange` preserves more verbatim than `general`, but it can still split a single transcript into many drawers. That is why the hook also files a separate explicit long-form drawer keyed to `transcript.full.raw`.
 - The `.txt` normalization is deliberate: the VS Code hook transcript arrives as JSONL event records, and upstream MemPalace does not reliably auto-parse this exact schema as a conversation transcript. Converting it to plain `>`-marked turns gives convo mining a stable, schema-independent input.
 - A stable cache path is safer than tmpfs or a pure in-memory handoff because MemPalace refreshes prior drawers by `source_file`. If the path changes on every hook run, deduplication becomes replacement-resistant and old drawers accumulate.
 - The hook emits warnings to stderr when cleanup or mining fails so export-only failures are visible during debugging.
 - Wing names include a short hash of the resolved workspace path to avoid collisions when different projects share the same folder basename.
-- The export path is stable per session so the hook can clear previously mined drawers for that source before re-mining.
+- The export path is stable per session so the hook can clear previously filed explicit fallback drawers for `transcript.full.raw` and re-mine `transcript.txt` predictably.
 - The hook script is deterministic and does not call Copilot or a sub-agent from Python.
 - If an upstream ChromaDB change ever makes an existing palace unreadable, use `mempalace --palace /path/to/palace migrate` after making sure the palace path is mounted and reachable.
+- Optional serve-web-specific preservation files live under `serve-web/`. They are examples, not the default desktop path.

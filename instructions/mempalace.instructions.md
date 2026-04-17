@@ -59,14 +59,15 @@ Do not skip a useful durable save merely because duplication is possible, but al
 
 ## Transcript Mining Rule
 
-Hook-captured chat transcripts are exported and mined outside the agent.
-The hook exports the verbatim session transcript as plain text, then MemPalace mines that export for conversation categorization.
+Hook-captured chat transcripts are exported and filed outside the agent.
+The hook exports the verbatim session transcript as plain text, files one explicit long-form transcript drawer for that session under a separate `transcript.full.raw` source identity, and then runs normal MemPalace conversation mining on `transcript.txt`.
 
 Do not create a parallel manual chat-summary workflow for normal transcript ingest.
 For hook-captured chat history, prefer retrieving from:
 
-- the exported and mined conversation transcript when exact history matters
-- the mined conversation rooms when categorized recall is enough
+- the explicit long-form transcript drawer in `chat_transcript_full` when exact history matters
+- the mined conversation records when you want upstream MemPalace's normal chunked representation
+- the closet layers when compact retrieval is enough
 
 ## Diary Rule
 
