@@ -13,7 +13,6 @@ This repo is not the MemPalace engine. It is the integration layer around it for
 
 ## What this solves
 
-The fragile part was asking the model itself to be the primary verbatim recorder.
 This setup moves raw chat capture into deterministic VS Code hooks instead.
 The hook reads the Copilot transcript file, writes a plain-text export, files one explicit long-form verbatim transcript drawer for the session, and then lets MemPalace run its normal conversation mining pass separately.
 
@@ -40,6 +39,11 @@ The current hook script and MCP wiring were validated against the official upstr
 
 ## Quick install outline
 
+
+Have an llm in agent mode clone this repo and setup the files according to these instructions.
+
+OR:
+
 ```bash
 python3 -m venv "$HOME/.venvs/mempalace-copilot"
 source "$HOME/.venvs/mempalace-copilot/bin/activate"
@@ -59,10 +63,6 @@ Then:
 8. Copy `instructions/mempalace.instructions.md` into an actual Copilot prompts location if you want it auto-loaded for a given profile.
 9. Copy `prompts/mpingest.prompt.md` into the active user prompts directory if you want the `/mpingest` slash command available in chat.
 10. Reload VS Code.
-
-The repo copy under `instructions/` is source material for version control. It is not automatically injected into every Copilot session just because the file exists in the workspace.
-
-The repo copy under `prompts/` is also source material for version control. Prompt files become active slash commands only after they are copied into the relevant VS Code user prompts directory.
 
 The `serve-web/` folder documents a working browser-served VS Code path that was validated against the MemPalace HTTP bridge. It is optional, but it is no longer just speculative preservation material.
 
