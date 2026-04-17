@@ -64,6 +64,14 @@ Then:
 9. Copy `prompts/mpingest.prompt.md` into the active user prompts directory if you want the `/mpingest` slash command available in chat.
 10. Reload VS Code.
 
+For manual hook replay or imported transcript ingest, run the deployed hook with the known MemPalace venv explicitly:
+
+```bash
+/home/admin/.venvs/mempalace-copilot/bin/python /home/admin/.config/Code/User/copilot-hooks/export_chat_hook.py
+```
+
+Do not assume the current shell `PATH` contains a working `mempalace` CLI or importable Python package.
+
 The `serve-web/` folder documents a working browser-served VS Code path that was validated against the MemPalace HTTP bridge. It is optional, but it is no longer just speculative preservation material.
 
 If you use a custom palace path, generate the exact MCP command with `mempalace --palace /path/to/palace mcp` and mirror that in your MCP config.

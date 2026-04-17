@@ -24,15 +24,17 @@ Process the supplied transcript files one at a time through the deployed hook sc
 2. If a folder is provided, enumerate candidate transcript files recursively and ingest them one at a time.
 3. Do not batch-import by calling `mempalace mine` directly on the external folder alone. The point is to run the deployed hook path per file.
 4. Prefer the deployed desktop hook script at `/home/admin/.config/Code/User/copilot-hooks/export_chat_hook.py` so behavior matches the live environment.
-5. Preserve a stable `cwd` when constructing the hook payload. If the user does not specify a target workspace, use the current workspace root.
-6. For each file, send a JSON payload to the hook script containing at minimum:
+5. Use the deployed MemPalace interpreter explicitly: `/home/admin/.venvs/mempalace-copilot/bin/python /home/admin/.config/Code/User/copilot-hooks/export_chat_hook.py`. Do not rely on `python3`, `mempalace`, `uv`, or the current shell `PATH`.
+6. Before ingesting any files, run a quick preflight with that interpreter to confirm `import mempalace` succeeds. If it fails, stop and report the runtime issue instead of attempting the full ingest loop.
+7. Preserve a stable `cwd` when constructing the hook payload. If the user does not specify a target workspace, use the current workspace root.
+8. For each file, send a JSON payload to the hook script containing at minimum:
    - `hook_event_name`: `Stop`
    - `transcript_path`: absolute path to the file being ingested
    - `cwd`: workspace root or chosen target root
    - `timestamp`: current ISO timestamp
    - `sessionId`: a stable identifier derived from the file path
-7. Ingest files sequentially, not concurrently.
-8. After processing, summarize:
+9. Ingest files sequentially, not concurrently.
+10. After processing, summarize:
    - how many files were attempted
    - how many succeeded or failed
    - any hook warnings or mine failures
@@ -52,7 +54,7 @@ Process the supplied transcript files one at a time through the deployed hook sc
 
 ## Suggested Execution Shape
 
-If the user gives a folder, first discover candidate files, then iterate one file at a time by piping a JSON payload into the deployed hook script.
+If the user gives a folder, first discover candidate files, then iterate one file at a time by piping a JSON payload into the deployed hook script through `/home/admin/.venvs/mempalace-copilot/bin/python`.
 
 ## Output Style
 

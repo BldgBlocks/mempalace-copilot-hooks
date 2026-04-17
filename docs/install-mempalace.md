@@ -63,6 +63,14 @@ To print the exact MCP setup command for your environment:
 For example, a desktop profile may use `~/.config/Code/User/prompts/` while a serve-web profile may use `~/.vscode-server/data/User/prompts/`.
 Keeping the files in this repo under `instructions/` and `prompts/` preserves the source, but those workspace paths alone do not guarantee automatic prompt or instruction injection.
 
+For manual hook replay, or for prompt-driven imported transcript ingest such as `/mpingest`, use the deployed MemPalace interpreter explicitly:
+
+```bash
+/home/admin/.venvs/mempalace-copilot/bin/python /home/admin/.config/Code/User/copilot-hooks/export_chat_hook.py
+```
+
+Do not rely on `python3`, `mempalace`, `uv`, or other ambient shell commands being available on `PATH` in the terminal where you run the import.
+
 If your VS Code MCP config does not expand `$HOME` in the `command` field, replace it with the full path for your machine.
 
 ## Notes
