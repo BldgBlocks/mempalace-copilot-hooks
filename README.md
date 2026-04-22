@@ -14,12 +14,12 @@ This repo is not the MemPalace engine. It is the integration layer around it for
 ## What this solves
 
 This setup moves raw chat capture into deterministic VS Code hooks instead.
-The hook reads the Copilot transcript file, writes a plain-text export, files one explicit long-form verbatim transcript drawer for the session, and then lets MemPalace run its normal conversation mining pass separately.
+The hook reads the Copilot transcript file, writes a plain-text export into the active workspace cache, sends the normalized transcript to a remote MemPalace HTTP bridge, and lets the bridge file the explicit long-form drawer plus the normal conversation mining pass.
 
 ## Included files
 
 - `hooks/export-events.json`: active hook mapping for `UserPromptSubmit`, `PreCompact`, and `Stop`
-- `hooks/export_chat_hook.py`: transcript export script plus MemPalace mining step
+- `hooks/export_chat_hook.py`: transcript export script plus remote bridge submission step
 - `utilities/mpimport.py`: helper for importing Markdown, `.txt`, or `.jsonl` chat exports through the deployed hook path
 - `instructions/mempalace.instructions.md`: simplified instruction file that assumes hooks own raw capture
 - `examples/settings.json`: minimal VS Code user settings snippet for hook discovery
@@ -28,37 +28,26 @@ The hook reads the Copilot transcript file, writes a plain-text export, files on
 - `serve-web/`: sanitized bridge, shim, service, and config examples for a validated serve-web deployment path
 - `docs/install-mempalace.md`: package install guidance for the official upstream package
 
-## Current tested package
+## Current bridge target
 
-The local machine this was extracted from currently uses:
+The current setup expects the MemPalace bridge and DB to live on:
 
-- package: `mempalace==3.3.0`
-- repo: https://github.com/MemPalace/mempalace
-- docs: https://mempalaceofficial.com/
+- bridge host: `10.0.0.12`
+- MCP endpoint: `http://10.0.0.12:3940/mcp`
+- hook ingest endpoint: `http://10.0.0.12:3940/copilot-hook`
 
-The current hook script and MCP wiring were validated against the official upstream package.
+The client machine running VS Code hooks no longer needs a local `mempalace` install. Only the bridge host needs the MemPalace package and DB.
 
 ## Quick install outline
 
-
-Have an llm in agent mode clone this repo and setup the files according to these instructions.
-
-OR:
-
-```bash
-python3 -m venv "$HOME/.venvs/mempalace-copilot"
-source "$HOME/.venvs/mempalace-copilot/bin/activate"
-pip install --upgrade pip
-pip install --upgrade mempalace
-```
 
 Then:
 
 1. Copy `hooks/export-events.json` and `hooks/export_chat_hook.py` into `$HOME/.config/Code/User/copilot-hooks/`.
 2. The deployed hook writes a normalized `transcript.txt` into the active workspace under `.mempalace-cache/copilot-hooks/<wing>/...` when the workspace path is available.
-3. It also writes a separate `transcript.full.raw` record in the same session folder and files that as one explicit titled `chat_transcript_full` drawer plus deterministic closets.
-4. It then runs `mempalace mine --mode convos --extract exchange` against the session folder so upstream MemPalace still produces its normal conversation-mined records from `transcript.txt`.
-5. That workspace-local cache is the intended steady-state location and is kept in place so later hook runs can rebuild the same explicit fallback record and re-mine the same `source_file` path cleanly. If no workspace path is available, the hook falls back to `$HOME/.config/Code/User/copilot-hooks/exports/<wing>/...`.
+3. It also writes a separate `transcript.full.raw` record in the same session folder. That local cache remains even if the bridge is unavailable.
+4. Each hook event posts the normalized transcript and explicit long-form record to `http://10.0.0.12:3940/copilot-hook` by default. The bridge files the `chat_transcript_full` drawer and runs `mempalace mine --mode convos --extract exchange` on the bridge host.
+5. That workspace-local cache is the intended steady-state location and is kept in place so later hook runs can rebuild the same explicit fallback record. If no workspace path is available, the hook falls back to `$HOME/.config/Code/User/copilot-hooks/exports/<wing>/...`.
 6. Merge `examples/settings.json` into VS Code user settings.
 7. Merge `examples/mcp.json` into VS Code user `mcp.json`.
 8. Copy `instructions/mempalace.instructions.md` into an actual Copilot prompts location if you want it auto-loaded for a given profile.
@@ -67,13 +56,13 @@ Then:
 
 The `utilities/` folder does not get copied into the VS Code prompts or hooks folders. Leave it in your cloned repo and run those scripts from the clone path when you need them. For example, if you cloned this repo into `~/src/mempalace-copilot-hooks`, the importer stays at `~/src/mempalace-copilot-hooks/utilities/mpimport.py`.
 
-For manual hook replay or imported transcript ingest, run the deployed hook with the known MemPalace venv explicitly:
+For manual hook replay or imported transcript ingest, run the deployed hook with any working `python3` and point it at the bridge explicitly:
 
 ```bash
-/home/admin/.venvs/mempalace-copilot/bin/python /home/admin/.config/Code/User/copilot-hooks/export_chat_hook.py
+MEMPALACE_BRIDGE_URL=http://10.0.0.12:3940 python3 "$HOME/.config/Code/User/copilot-hooks/export_chat_hook.py"
 ```
 
-Do not assume the current shell `PATH` contains a working `mempalace` CLI or importable Python package.
+The client machine does not need a working `mempalace` CLI or importable Python package anymore. It does need network reachability to the bridge.
 
 For imported chat exports that are already `.txt` or hook-readable `.jsonl`, you can still drive the deployed hook directly one file at a time. For Markdown exports in the common heading-based format, use the repo utility so conversion and ingest stay aligned with the documented hook path:
 
@@ -85,9 +74,7 @@ That command preserves the same preflight check, stable `cwd`, sequential hook e
 
 The `serve-web/` folder documents a working browser-served VS Code path that was validated against the MemPalace HTTP bridge. It is optional, but it is no longer just speculative preservation material.
 
-If you use a custom palace path, generate the exact MCP command with `mempalace --palace /path/to/palace mcp` and mirror that in your MCP config.
-
-If your VS Code MCP config does not expand `$HOME` in the `command` field, replace it with your full local path.
+If your bridge listener moves, override the default with `MEMPALACE_BRIDGE_URL=http://host:port` in the hook command or shell environment.
 
 Full details are in `docs/install-mempalace.md`.
 
@@ -102,11 +89,11 @@ Full details are in `docs/install-mempalace.md`.
 - The hook prints warnings to stderr on cleanup or mining failures instead of failing silently.
 - The `.mempalace-cache` path is preferred over tmpfs or an in-memory handoff because MemPalace replaces old drawers by stable `source_file`, which requires the cache path to survive across separate hook invocations.
 - Wing names are derived from the workspace basename plus a short hash of the resolved workspace path, which avoids collisions between different projects that share the same folder name.
-- The hook keeps one explicit titled long-form drawer in room `chat_transcript_full`. This is fallback data, migration data, future-proof data, long-form data, safer verbatim data, and rebuildable data.
+- The hook keeps one explicit titled long-form local record and sends the same record to the bridge for filing in room `chat_transcript_full`.
 - That explicit long-form record uses its own `source_file` identity (`transcript.full.raw`) so MemPalace re-mines of `transcript.txt` do not purge it.
 - The explicit long-form drawer content starts with a strong title block derived from the session folder name so it is obvious in previews and exports what the record is.
-- The hook still runs `mempalace mine --mode convos --extract exchange` for the normal upstream conversation-ingest path on `transcript.txt`.
+- The bridge host runs `mempalace mine --mode convos --extract exchange` for the normal upstream conversation-ingest path on `transcript.txt`.
 - The exported transcript path is stable per session so re-mining refreshes the same source instead of creating unrelated duplicates.
-- The mining step is handled by MemPalace itself rather than by an agent-authored prompt workflow.
+- If the bridge is unavailable or returns malformed data, the hook fails open: chat continues, local cache files remain on disk, and the hook writes a warning to stderr instead of pretending the remote ingest succeeded.
 - The repo utility `utilities/mpimport.py` is a convenience wrapper around that same deployed hook path. It can convert Markdown exports into cached `transcript.txt` files, or pass `.txt` and `.jsonl` sources straight through, without bypassing the hook.
 

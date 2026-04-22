@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -10,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-DEFAULT_HOOK_PYTHON = "/home/admin/.venvs/mempalace-copilot/bin/python"
-DEFAULT_HOOK_SCRIPT = "/home/admin/.config/Code/User/copilot-hooks/export_chat_hook.py"
+DEFAULT_HOOK_PYTHON = "python3"
+DEFAULT_HOOK_SCRIPT = str(Path.home() / ".config" / "Code" / "User" / "copilot-hooks" / "export_chat_hook.py")
 DEFAULT_CACHE_DIRNAME = ".mempalace-cache/imports"
 SKIP_DIRS = {".git", ".venv", ".mempalace-cache", "node_modules", "__pycache__"}
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
@@ -68,7 +69,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--hook-python",
         default=DEFAULT_HOOK_PYTHON,
-        help="Python interpreter used to run the deployed MemPalace hook.",
+        help="Python interpreter used to run the deployed hook.",
     )
     parser.add_argument(
         "--hook-script",
@@ -234,7 +235,7 @@ def find_existing_transcripts(cache_root: Path) -> list[Path]:
 
 def preflight_hook(hook_python: str, hook_script: str) -> tuple[bool, str]:
     result = subprocess.run(
-        [hook_python, "-c", "import mempalace; print('PREFLIGHT_OK')"],
+        [hook_python, "-c", "print('PREFLIGHT_OK')"],
         capture_output=True,
         text=True,
     )
@@ -278,10 +279,12 @@ def ingest_transcripts(
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "sessionId": session_id,
         }
+        child_env = os.environ.copy()
         result = subprocess.run(
             [hook_python, hook_script],
             input=json.dumps(payload) + "\n",
             capture_output=True,
+            env=child_env,
             text=True,
         )
         if result.returncode == 0:

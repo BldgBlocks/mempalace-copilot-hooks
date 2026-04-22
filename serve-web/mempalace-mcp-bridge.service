@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/.venvs/mempalace-copilot/bin/python %h/.config/Code/User/serve-web/mempalace_mcp_http_bridge.py --host 127.0.0.1 --port 3940 --palace %h/.local/share/mempalace/palace
+ExecStart=%h/.venvs/mempalace-copilot/bin/python %h/.config/Code/User/serve-web/mempalace_mcp_http_bridge.py --host 0.0.0.0 --port 3940 --palace %h/.local/share/mempalace/palace
 Restart=always
 RestartSec=5
 WorkingDirectory=%h

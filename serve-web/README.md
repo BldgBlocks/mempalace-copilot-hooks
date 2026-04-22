@@ -5,15 +5,15 @@ This folder preserves the working serve-web support files without baking machine
 These files are optional.
 The default and simpler setup for normal desktop VS Code remains:
 
-- hook-based transcript export and mining
-- direct MemPalace MCP wiring
+- hook-based transcript export with bridge-backed filing/mining
+- HTTP MemPalace MCP wiring through the bridge
 - the repo instruction source file copied into the active profile's prompts directory
 
 Use this folder if you need a browser-served VS Code instance. This path was validated end to end with MemPalace MCP calls succeeding through the HTTP bridge.
 
 ## Included Files
 
-- `mempalace_mcp_http_bridge.py`: stdio-to-HTTP MCP bridge for MemPalace
+- `mempalace_mcp_http_bridge.py`: stdio-to-HTTP MCP bridge for MemPalace plus `/copilot-hook` ingest for exported transcripts
 - `navigator-shim.cjs`: serve-web workaround that injects `--supportGlobalNavigator`
 - `code-serve-web.service`: sanitized systemd user service example for `code-tunnel serve-web`
 - `mempalace-mcp-bridge.service`: sanitized systemd user service example for the bridge
@@ -47,5 +47,5 @@ Practical rule:
 
 1. Copy `instructions/mempalace.instructions.md` into the prompts directory for the profile you are actually using.
 2. Adjust the placeholders in the service files and `mcp.json`.
-3. Keep the bridge bound to loopback unless you explicitly want remote access and have additional protections in front of it.
+3. If your hook clients are on another machine, bind the bridge to a reachable interface such as `0.0.0.0` or the specific LAN address and point `MEMPALACE_BRIDGE_URL` at that host explicitly. If you do not need off-box clients, keep it on loopback.
 4. Treat this folder as an optional serve-web deployment layer, not the canonical baseline desktop setup.

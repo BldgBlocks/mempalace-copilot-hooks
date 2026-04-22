@@ -3,21 +3,21 @@
     "UserPromptSubmit": [
       {
         "type": "command",
-        "command": "$HOME/.venvs/mempalace-copilot/bin/python $HOME/.config/Code/User/copilot-hooks/export_chat_hook.py",
+        "command": "MEMPALACE_BRIDGE_URL=http://10.0.0.12:3940 python3 $HOME/.config/Code/User/copilot-hooks/export_chat_hook.py",
         "timeout": 45
       }
     ],
     "PreCompact": [
       {
         "type": "command",
-        "command": "$HOME/.venvs/mempalace-copilot/bin/python $HOME/.config/Code/User/copilot-hooks/export_chat_hook.py",
+        "command": "MEMPALACE_BRIDGE_URL=http://10.0.0.12:3940 python3 $HOME/.config/Code/User/copilot-hooks/export_chat_hook.py",
         "timeout": 45
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "$HOME/.venvs/mempalace-copilot/bin/python $HOME/.config/Code/User/copilot-hooks/export_chat_hook.py",
+        "command": "MEMPALACE_BRIDGE_URL=http://10.0.0.12:3940 python3 $HOME/.config/Code/User/copilot-hooks/export_chat_hook.py",
         "timeout": 45
       }
     ]

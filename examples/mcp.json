@@ -1,14 +1,8 @@
 {
   "servers": {
     "mempalace": {
-      "type": "stdio",
-      "command": "$HOME/.venvs/mempalace-copilot/bin/python",
-      "args": [
-        "-m",
-        "mempalace.mcp_server",
-        "--palace",
-        "/path/to/palace"
-      ]
+      "type": "http",
+      "url": "http://10.0.0.12:3940/mcp"
     }
   },
   "inputs": []

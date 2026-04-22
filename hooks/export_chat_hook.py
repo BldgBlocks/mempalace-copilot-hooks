@@ -2,20 +2,11 @@
 
 import hashlib
 import json
-import subprocess
+import os
+import socket
 import sys
-from datetime import datetime
 from pathlib import Path
-
-from mempalace.config import MempalaceConfig
-from mempalace.palace import (
-    NORMALIZE_VERSION,
-    build_closet_lines,
-    get_closets_collection as palace_get_closets_collection,
-    get_collection as palace_get_collection,
-    purge_file_closets,
-    upsert_closet_lines,
-)
+from urllib import error, parse, request
 
 ADDED_BY = "GitHub Copilot Hook"
 MINE_EVENTS = {"UserPromptSubmit", "PreCompact", "Stop"}
@@ -25,6 +16,9 @@ FULL_TRANSCRIPT_EXTRACT_MODE = "verbatim_full"
 MINE_EXTRACT_MODE = "exchange"
 FULL_TRANSCRIPT_FILENAME = "transcript.full.raw"
 KNOWN_RECORD_TYPES = {"session.start", "user.message", "assistant.message"}
+DEFAULT_BRIDGE_URL = "http://10.0.0.12:3940"
+DEFAULT_BRIDGE_ENDPOINT = "/copilot-hook"
+DEFAULT_BRIDGE_TIMEOUT_SECONDS = 8.0
 
 
 def warn(message: str) -> None:
@@ -55,39 +49,12 @@ def derive_wing(payload: dict) -> str:
 
 
 def derive_cache_root(payload: dict, wing: str) -> Path:
-    # Keep hook exports on a stable filesystem path.
-    #
-    # Why not raw in-memory / tmpfs by default:
-    # - This hook is a one-shot process; there is no shared in-memory state
-    #   across invocations.
-    # - The raw transcript drawer and closets are keyed by source_file, so the
-    #   cache path must be stable across repeated hook runs for the same session.
-    # - A workspace-local .mempalace-cache keeps data out of unrelated user
-    #   config folders while still giving the palace a durable replacement key.
     cwd_value = get_field(payload, "cwd", default="")
     if cwd_value:
         cwd = Path(cwd_value).expanduser()
         if cwd.is_dir():
             return cwd / ".mempalace-cache" / "copilot-hooks" / wing
     return Path(__file__).resolve().parent / EXPORTS_DIRNAME / wing
-
-
-def get_drawers_collection(palace_path: Path):
-    palace_path.mkdir(parents=True, exist_ok=True)
-    try:
-        return palace_get_collection(str(palace_path), collection_name="mempalace_drawers", create=True)
-    except Exception as exc:
-        warn(f"could not open mempalace_drawers collection at {palace_path}: {exc}")
-        return None
-
-
-def get_closets_collection(palace_path: Path):
-    palace_path.mkdir(parents=True, exist_ok=True)
-    try:
-        return palace_get_closets_collection(str(palace_path), create=True)
-    except Exception as exc:
-        warn(f"could not open mempalace_closets collection at {palace_path}: {exc}")
-        return None
 
 
 def read_transcript_records(transcript: str) -> list[dict]:
@@ -255,124 +222,129 @@ def build_explicit_transcript_document(session_title: str, export_path: Path, tr
     return "\n".join(header_lines + [transcript_text] + footer_lines).strip()
 
 
-def transcript_drawer_id(wing: str, source_file: str) -> str:
-    source_hash = hashlib.sha256(source_file.encode(), usedforsecurity=False).hexdigest()[:24]
-    return f"drawer_{wing}_{FULL_TRANSCRIPT_ROOM}_{source_hash}"
+def build_bridge_hook_url() -> str:
+    bridge_url = os.environ.get("MEMPALACE_BRIDGE_URL", DEFAULT_BRIDGE_URL).strip() or DEFAULT_BRIDGE_URL
+    endpoint = os.environ.get("MEMPALACE_BRIDGE_ENDPOINT", "").strip()
+    parsed = parse.urlparse(bridge_url)
+
+    if parsed.scheme and parsed.netloc and parsed.path not in ("", "/") and not endpoint:
+        return bridge_url
+
+    if not endpoint:
+        endpoint = DEFAULT_BRIDGE_ENDPOINT
+    if not endpoint.startswith("/"):
+        endpoint = f"/{endpoint}"
+
+    if parsed.scheme and parsed.netloc:
+        return parse.urlunparse((parsed.scheme, parsed.netloc, endpoint, "", "", ""))
+    return bridge_url.rstrip("/") + endpoint
 
 
-def transcript_closet_id_base(wing: str, source_file: str) -> str:
-    source_hash = hashlib.sha256(source_file.encode(), usedforsecurity=False).hexdigest()[:24]
-    return f"closet_{wing}_{FULL_TRANSCRIPT_ROOM}_{source_hash}"
-
-
-def cleanup_transcript_artifacts(drawers_col, closets_col, source_file: str) -> None:
-    if drawers_col is not None:
-        try:
-            drawers_col.delete(where={"source_file": source_file})
-        except Exception as exc:
-            warn(f"could not delete existing drawers for {source_file}: {exc}")
-    if closets_col is not None:
-        try:
-            purge_file_closets(closets_col, source_file)
-        except Exception as exc:
-            warn(f"could not delete existing closets for {source_file}: {exc}")
-
-
-def file_transcript_drawer(drawers_col, wing: str, source_file: str, session_title: str, transcript_document: str) -> str | None:
-    if drawers_col is None:
-        return None
-
-    drawer_id = transcript_drawer_id(wing, source_file)
+def get_bridge_timeout_seconds() -> float:
+    raw = os.environ.get("MEMPALACE_BRIDGE_TIMEOUT_SECONDS", "").strip()
+    if not raw:
+        return DEFAULT_BRIDGE_TIMEOUT_SECONDS
     try:
-        drawers_col.upsert(
-            ids=[drawer_id],
-            documents=[transcript_document],
-            metadatas=[
-                {
-                    "wing": wing,
-                    "room": FULL_TRANSCRIPT_ROOM,
-                    "hall": "general",
-                    "source_file": source_file,
-                    "chunk_index": 0,
-                    "added_by": ADDED_BY,
-                    "filed_at": datetime.now().isoformat(),
-                    "title": session_title,
-                    "record_class": "explicit_fallback_migration_futureproof_longform_rebuildable",
-                    "ingest_mode": "hook_transcript_full",
-                    "extract_mode": FULL_TRANSCRIPT_EXTRACT_MODE,
-                    "normalize_version": NORMALIZE_VERSION,
-                }
-            ],
-        )
-        return drawer_id
-    except Exception as exc:
-        warn(f"could not file transcript drawer for {source_file}: {exc}")
-        return None
+        value = float(raw)
+    except ValueError:
+        warn(f"invalid MEMPALACE_BRIDGE_TIMEOUT_SECONDS={raw!r}; using default {DEFAULT_BRIDGE_TIMEOUT_SECONDS}")
+        return DEFAULT_BRIDGE_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_BRIDGE_TIMEOUT_SECONDS
 
 
-def file_transcript_closets(closets_col, wing: str, source_file: str, drawer_id: str, transcript_text: str) -> None:
-    if closets_col is None:
-        return
+def build_bridge_payload(
+    payload: dict,
+    wing: str,
+    session_date: str,
+    label_slug: str,
+    session_hash: str,
+    export_path: Path,
+    full_export_path: Path,
+    session_title: str,
+    transcript_text: str,
+    transcript_document: str,
+) -> dict:
+    hostname = socket.gethostname()
+    return {
+        "wing": wing,
+        "session_date": session_date,
+        "label_slug": label_slug,
+        "session_hash": session_hash,
+        "session_folder": export_path.parent.name,
+        "session_title": session_title,
+        "transcript_text": transcript_text,
+        "transcript_document": transcript_document,
+        "client_export_path": str(export_path),
+        "client_full_export_path": str(full_export_path),
+        "client_cwd": get_field(payload, "cwd", default=""),
+        "client_hostname": hostname,
+        "client_timestamp": get_field(payload, "timestamp", default=""),
+        "added_by": ADDED_BY,
+        "mine_extract_mode": MINE_EXTRACT_MODE,
+        "full_transcript_room": FULL_TRANSCRIPT_ROOM,
+        "full_transcript_extract_mode": FULL_TRANSCRIPT_EXTRACT_MODE,
+        "full_transcript_filename": FULL_TRANSCRIPT_FILENAME,
+    }
 
-    try:
-        lines = build_closet_lines(source_file, [drawer_id], transcript_text, wing, FULL_TRANSCRIPT_ROOM)
-        upsert_closet_lines(
-            closets_col,
-            transcript_closet_id_base(wing, source_file),
-            lines,
-            {
-                "wing": wing,
-                "room": FULL_TRANSCRIPT_ROOM,
-                "hall": "general",
-                "source_file": source_file,
-                "added_by": ADDED_BY,
-                "filed_at": datetime.now().isoformat(),
-                "record_class": "explicit_fallback_migration_futureproof_longform_rebuildable",
-                "ingest_mode": "hook_transcript_full",
-                "extract_mode": FULL_TRANSCRIPT_EXTRACT_MODE,
-                "normalize_version": NORMALIZE_VERSION,
-            },
-        )
-    except Exception as exc:
-        warn(f"could not file transcript closets for {source_file}: {exc}")
 
-
-def run_mine_command(export_path: Path, wing: str, palace_path: Path) -> None:
-    command = [
-        sys.executable,
-        "-m",
-        "mempalace.cli",
-        "--palace",
-        str(palace_path),
-        "mine",
-        str(export_path.parent),
-        "--mode",
-        "convos",
-        "--wing",
-        wing,
-        "--extract",
-        MINE_EXTRACT_MODE,
-        "--agent",
-        ADDED_BY,
-    ]
+def submit_transcript_to_bridge(bridge_payload: dict) -> bool:
+    bridge_url = build_bridge_hook_url()
+    request_body = json.dumps(bridge_payload).encode("utf-8")
+    http_request = request.Request(
+        bridge_url,
+        data=request_body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
 
     try:
-        result = subprocess.run(
-            command,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=40,
-        )
-        if result.stderr.strip():
-            warn(result.stderr.strip())
-    except subprocess.TimeoutExpired as exc:
-        warn(f"mempalace mine timed out for {export_path.parent}: {exc}")
-    except subprocess.CalledProcessError as exc:
-        details = exc.stderr.strip() or exc.stdout.strip() or str(exc)
-        warn(f"mempalace mine failed for {export_path.parent}: {details}")
+        with request.urlopen(http_request, timeout=get_bridge_timeout_seconds()) as response:
+            response_body = response.read().decode("utf-8", errors="replace")
+            status_code = getattr(response, "status", None) or response.getcode()
+    except error.HTTPError as exc:
+        response_body = exc.read().decode("utf-8", errors="replace")
+        warn(f"bridge request failed with HTTP {exc.code}: {response_body.strip() or exc.reason}")
+        return False
+    except error.URLError as exc:
+        warn(f"bridge unavailable at {bridge_url}: {exc.reason}")
+        return False
+    except TimeoutError:
+        warn(f"bridge request timed out after {get_bridge_timeout_seconds()}s: {bridge_url}")
+        return False
     except Exception as exc:
-        warn(f"unexpected mine failure for {export_path.parent}: {exc}")
+        warn(f"unexpected bridge failure for {bridge_url}: {exc}")
+        return False
+
+    if status_code < 200 or status_code >= 300:
+        warn(f"bridge returned HTTP {status_code}: {response_body.strip()}")
+        return False
+
+    try:
+        response_payload = json.loads(response_body)
+    except json.JSONDecodeError as exc:
+        warn(f"bridge returned malformed JSON: {exc.msg}")
+        return False
+
+    if not isinstance(response_payload, dict):
+        warn("bridge returned a non-object response")
+        return False
+
+    if response_payload.get("ok") is not True:
+        details = response_payload.get("error") or response_payload.get("warnings") or response_payload
+        warn(f"bridge did not confirm transcript ingest: {details}")
+        return False
+
+    remote_export_path = response_payload.get("remote_export_path")
+    remote_full_export_path = response_payload.get("remote_full_export_path")
+    if not isinstance(remote_export_path, str) or not isinstance(remote_full_export_path, str):
+        warn("bridge response was missing remote transcript paths")
+        return False
+
+    warnings = response_payload.get("warnings")
+    if isinstance(warnings, list) and warnings:
+        warn("bridge completed with warnings: " + " | ".join(str(item) for item in warnings[:5]))
+
+    return True
 
 
 def maybe_store_transcript(payload: dict) -> None:
@@ -425,18 +397,24 @@ def maybe_store_transcript(payload: dict) -> None:
         warn(f"no parseable transcript records found in {source}")
         return
 
-    palace_path = Path(MempalaceConfig().palace_path).expanduser()
-    drawers_col = get_drawers_collection(palace_path)
-    closets_col = get_closets_collection(palace_path)
     full_export_path = derive_full_transcript_path(export_path)
     session_title = derive_session_title(export_path)
     transcript_document = build_explicit_transcript_document(session_title, export_path, transcript_text)
     full_export_path.write_text(transcript_document + "\n", encoding="utf-8")
-    cleanup_transcript_artifacts(drawers_col, closets_col, str(full_export_path))
-    drawer_id = file_transcript_drawer(drawers_col, wing, str(full_export_path), session_title, transcript_document)
-    if drawer_id:
-        file_transcript_closets(closets_col, wing, str(full_export_path), drawer_id, transcript_text)
-    run_mine_command(export_path, wing, palace_path)
+
+    bridge_payload = build_bridge_payload(
+        payload=payload,
+        wing=wing,
+        session_date=session_date,
+        label_slug=label_slug,
+        session_hash=session_hash,
+        export_path=export_path,
+        full_export_path=full_export_path,
+        session_title=session_title,
+        transcript_text=transcript_text,
+        transcript_document=transcript_document,
+    )
+    submit_transcript_to_bridge(bridge_payload)
 
 
 def main() -> int:
@@ -445,8 +423,17 @@ def main() -> int:
         print(json.dumps({"continue": True}))
         return 0
 
-    payload = json.loads(raw_payload)
-    maybe_store_transcript(payload)
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        warn(f"invalid hook payload JSON: {exc.msg}")
+        print(json.dumps({"continue": True}))
+        return 0
+
+    if isinstance(payload, dict):
+        maybe_store_transcript(payload)
+    else:
+        warn("hook payload was not a JSON object")
 
     print(json.dumps({"continue": True}))
     return 0

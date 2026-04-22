@@ -25,9 +25,9 @@ Process the supplied transcript files one at a time through the deployed hook sc
 1. Treat the user-provided input as one or more file paths or folder paths.
 2. If a folder is provided, enumerate candidate transcript files recursively and ingest them one at a time.
 3. Do not batch-import by calling `mempalace mine` directly on the external folder alone. The point is to run the deployed hook path per file.
-4. Prefer the deployed desktop hook script at `/home/admin/.config/Code/User/copilot-hooks/export_chat_hook.py` so behavior matches the live environment.
-5. Use the deployed MemPalace interpreter explicitly: `/home/admin/.venvs/mempalace-copilot/bin/python /home/admin/.config/Code/User/copilot-hooks/export_chat_hook.py`. Do not rely on `python3`, `mempalace`, `uv`, or the current shell `PATH`.
-6. Before ingesting any files, run a quick preflight with that interpreter to confirm `import mempalace` succeeds. If it fails, stop and report the runtime issue instead of attempting the full ingest loop.
+4. Prefer the deployed desktop hook script at `$HOME/.config/Code/User/copilot-hooks/export_chat_hook.py` so behavior matches the live environment.
+5. Use the deployed hook with the bridge URL explicitly: `MEMPALACE_BRIDGE_URL=http://10.0.0.12:3940 python3 "$HOME/.config/Code/User/copilot-hooks/export_chat_hook.py"`.
+6. Before ingesting any files, confirm the hook script exists and the bridge is reachable. If the bridge is unavailable, stop and report the runtime issue instead of attempting the full ingest loop.
 7. Preserve a stable `cwd` when constructing the hook payload. If the user does not specify a target workspace, use the current workspace root.
 8. For each file, send a JSON payload to the hook script containing at minimum:
    - `hook_event_name`: `Stop`
@@ -60,7 +60,7 @@ Process the supplied transcript files one at a time through the deployed hook sc
 
 If the user gives a folder, first discover candidate files.
 
-- For `.jsonl` or `.txt` transcript inputs, iterate one file at a time by piping a JSON payload into the deployed hook script through `/home/admin/.venvs/mempalace-copilot/bin/python`.
+- For `.jsonl` or `.txt` transcript inputs, iterate one file at a time by piping a JSON payload into the deployed hook script through `python3` with `MEMPALACE_BRIDGE_URL=http://10.0.0.12:3940`.
 - For Markdown exports, prefer `utilities/mpimport.py` when it is available, because it performs Markdown-to-`transcript.txt` conversion and then does the same sequential hook ingest path.
 
 ## Output Style
