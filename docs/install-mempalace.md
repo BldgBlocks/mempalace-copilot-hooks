@@ -54,7 +54,7 @@ To print the exact MCP setup command for your environment:
 
 ## VS Code client wiring
 
-1. Put the hook files in `$HOME/.config/Code/User/copilot-hooks/`.
+1. Prefer `python utilities/sync_live_vscode.py --bridge-url http://10.0.0.12:3940` from the repo root to refresh the live VS Code files in one step. If you do it manually instead, put the hook files in `$HOME/.config/Code/User/copilot-hooks/`.
 2. Add the hook location snippet from `examples/settings.json` to your VS Code user settings.
 3. Add the HTTP MCP server snippet from `examples/mcp.json` to your VS Code user `mcp.json`.
 4. Copy `instructions/mempalace.instructions.md` into the user prompts location for the profile you are using.
@@ -63,8 +63,28 @@ To print the exact MCP setup command for your environment:
 
 Keep `utilities/` in the cloned repo. It is not part of the VS Code user prompts path or the deployed hook folder. Those scripts are meant to be run from wherever you cloned this repository, for example `~/src/mempalace-copilot-hooks/utilities/mpimport.py`.
 
+The sync helper updates the live hook files under `$HOME/.config/Code/User/copilot-hooks/`, enables hook discovery in `$HOME/.config/Code/User/settings.json`, and rewrites the `mempalace` entry in `$HOME/.config/Code/User/mcp.json` to the selected HTTP bridge URL while leaving other MCP server entries intact.
+
 For example, a desktop profile may use `~/.config/Code/User/prompts/` while a serve-web profile may use `~/.vscode-server/data/User/prompts/`.
 Keeping the files in this repo under `instructions/` and `prompts/` preserves the source, but those workspace paths alone do not guarantee automatic prompt or instruction injection.
+
+For Remote-SSH specifically: MCP can point at the LAN bridge from the desktop client, but hook execution may still happen in the remote workspace host. If that is your setup, install the hook files and `chat.hookFilesLocations` setting in the remote host's VS Code user profile as well. The remote host still does not need a local `mempalace` package; it only needs `python3`, the deployed hook files, and network reachability to the bridge.
+
+For a one-step Remote-SSH bootstrap on a Linux SSH device, run:
+
+```bash
+bash utilities/setup_ssh_device_hooks.sh --bridge-url http://10.0.0.12:3940
+```
+
+That writes the hook files into `~/.config/Code/User/copilot-hooks/`, enables hook discovery in both `~/.config/Code/User/settings.json` and `~/.vscode-server/data/Machine/settings.json`, and leaves the remote host free of any local MemPalace package dependency. This bootstrap currently targets Linux SSH hosts only.
+
+If you want to push that setup from this machine to another Linux SSH device without first cloning the repo there, run:
+
+```bash
+bash utilities/deploy_ssh_device_hooks.sh --target user@host --bridge-url http://10.0.0.12:3940
+```
+
+That sends the minimal bootstrap payload over `ssh`, runs the remote setup script on the target, and removes the temporary remote files when finished. It currently assumes a Linux target with Bash, tar, python3, and the standard `~/.config/Code/User` plus `~/.vscode-server/data` layout.
 
 For manual hook replay, or for prompt-driven imported transcript ingest such as `/mpingest`, use the deployed hook with the bridge URL explicitly:
 
