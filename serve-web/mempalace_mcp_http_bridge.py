@@ -536,7 +536,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=3940)
     parser.add_argument("--palace", required=True)
-    parser.add_argument("--python", default="python3")
+    parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--idle-timeout-seconds", type=int, default=1800)
     parser.add_argument("--hook-cache-root", default=DEFAULT_HOOK_CACHE_ROOT)
     parser.add_argument("--mine-timeout-seconds", type=int, default=40)
